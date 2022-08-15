@@ -1,0 +1,55 @@
+---
+- name:   configure install nodejs and npm
+  become: yes
+  hosts:  all
+  tasks:
+    - name: update apt repo and cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    - name:   install node and npm
+      apt:
+        pkg:
+          - nodejs
+          - npm
+          - unzip
+      
+- name: creating linux user dhoni
+  become: True
+  hosts: all
+  tasks:
+    - name:  linux user
+      user:
+        name: dhoni
+        comment: the finisher
+        group:  root   
+      
+- name: deploying nodejs application
+  become: yes
+  hosts: all
+  tasks:
+    - name: copying to remote server
+      copy: 
+        src:  /home/kalai/Downloads/nodejs.zip
+        dest: /home/dhoni
+    - name: extracting the file nodejs
+      unarchive:
+        src:  /home/dhoni/nodejs.zip
+        dest: /home/dhoni
+        remote_src: yes
+    - name:  install and start nginx
+      apt:
+        name: nginx
+        state: latest
+    - name:  starting ngnix
+      service:
+        name: nginx
+        state:  started     
+    - name: ensure app is running
+      shell : ps aux | grep nginx
+      register: app_status
+    - debug: msg={{app_status.stdout_lines}}
+      tags:
+        - engine
+        - robot
+    

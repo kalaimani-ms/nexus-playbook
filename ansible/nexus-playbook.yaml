@@ -1,0 +1,129 @@
+---
+- name: Nexus Repository playbook
+  hosts:  Nexus_server
+  become: True
+  remote_user:  ubuntu
+  tasks:
+    - name: updating apt repo and cache 
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    - name: Install Java and net-tools
+      apt:
+        pkg:
+          - openjdk-8-jre-headless
+          - net-tools
+          - acl
+    
+- name: download Nexus and extracting it to remote server
+  hosts:  Nexus_server
+  become: True
+  tasks:
+    - name: Get stats of a file
+      stat:
+        path: /opt/nexus
+      register: stat_result
+    - debug: msg={{stat_result}}
+      tags:
+        - status
+    - name: Download nexus repository
+      get_url:
+        url: https://download.sonatype.com/nexus/3/nexus-3.41.0-01-unix.tar.gz
+        dest: /opt/
+      register: download_result
+      tags:
+        - download
+    - name: extracting nexus repository
+      unarchive:
+        src: "{{download_result.dest}}"
+        dest: /opt/
+        remote_src: yes
+      when: not stat_result.stat.exists  
+      tags:
+        - tar
+    - name: finding nexus directory
+      find:
+        paths: /opt/
+        file_type: directory
+        use_regex: yes
+        patterns: "nexus-*"
+      register: find_result
+      tags:
+        - find
+    - name: rename nexus folder
+      shell:  mv {{find_result.files[0].path}}  /opt/nexus
+      when: not stat_result.stat.exists
+      tags:
+        - rename
+
+- name: Add the user 'nexus' with a specific uid , changing owner permission to directories
+  hosts: Nexus_server
+  become: True
+  remote_user: ubuntu
+  tasks:
+    - name: creating group nexus
+      group:
+        name: nexus
+        state: present
+      tags:
+        - group
+    - name: creating user nexus
+      user:
+        name: nexus
+        comment: nexus repository user
+        group: nexus
+      tags:
+        - Nexus_user
+    - name: Change file ownership, group and permissions
+      file:
+        path: /opt/nexus
+        owner: nexus
+        group: nexus
+        mode: u=rwx,g=rwx,o=rx
+        recurse:  yes
+      tags: 
+        - owner
+    - name: Change file ownership, group and permissions
+      file:
+        path: /opt/sonatype-work
+        owner: nexus
+        group: nexus
+        mode: u=rwx,g=rx,o=rx
+        recurse:  yes
+      tags: 
+        - sona
+
+- name: Set run as user nexus and Start nexus
+  hosts:  Nexus_server
+  become: True
+  become_user:  nexus
+  tasks:  
+    - name: set run as user in nexus rc file
+      lineinfile:
+        path: /opt/nexus/bin/nexus.rc
+        regexp: '^#run_as_user=""'
+        line: run_as_user="nexus"
+      tags:
+        - NexusRC  
+    - name: starting nexus
+      command:  /opt/nexus/bin/nexus start
+      tags:
+        - start
+
+- name: Ensure the app is running
+  hosts:  Nexus_server
+  become: True
+  become_user: nexus
+  tasks:
+    - name: check with ps
+      shell:  ps aux | grep nexus
+      register: app_status
+    - debug:  msg={{app_status.stdout_lines}}
+      tags:
+        - ps_grep
+    - name: check with netstat
+      shell:  netstat -lnpt
+      register: app_status
+    - debug:  msg={{app_status.stdout_lines}}
+      tags: 
+        - netstat
